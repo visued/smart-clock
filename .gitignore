@@ -1,0 +1,4 @@
+.venv/
+.pio/
+firmware/.pio/
+collector/config.yaml

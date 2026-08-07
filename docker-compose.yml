@@ -1,0 +1,11 @@
+services:
+  collector:
+    build: ./collector
+    container_name: smartclock-collector
+    ports:
+      - "8787:8787"
+    # config editável pela página web (gravada pelo próprio coletor); código read-only
+    volumes:
+      - ./collector/config.yaml:/app/config.yaml
+      - ./collector/collector.py:/app/collector.py:ro
+    restart: unless-stopped

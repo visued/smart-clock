@@ -1,0 +1,40 @@
+# SmartClock AI Collector — configuração
+# Copie para config.yaml e preencha. config.yaml NÃO vai para o git (contém chaves).
+
+listen: 0.0.0.0
+port: 8787
+cache_ttl: 60          # segundos entre consultas reais ao provedor
+
+providers:
+  # DeepSeek: saldo real via GET https://api.deepseek.com/user/balance
+  # Chave: platform.deepseek.com -> API Keys (criar chave; conta precisa de saldo/recarga)
+  deepseek:
+    enabled: true
+    api_key: "sk-TROQUE_AQUI"
+    budget: 50          # orçamento mensal em CNY para calcular % de uso (0 = sem %)
+    display_name: "DeepSeek"
+
+  # Ollama Cloud: NÃO existe API pública de quota (issue ollama/ollama#16448).
+  # A % é manual: olhe o dashboard em ollama.com e preencha "used".
+  ollama_cloud:
+    enabled: true
+    budget: 100         # limite mensal (unidade arbitrária)
+    used: 0             # preencher manualmente
+    reset: "reseta: 10/08 00:00"   # texto livre mostrado no card do relógio
+    # limites extras (ex.: horário e semanal) — cada um vira "H45% W60%" no card
+    limits:
+      - label: "H"      # limite por horas/sessão
+        used: 45
+        budget: 100
+        reset: "em 3h"
+      - label: "W"      # limite semanal
+        used: 60
+        budget: 100
+        reset: "2d"
+    display_name: "Ollama Cloud"
+
+# Clima atual (linha de clima no relógio — mesmo serviço que o firmware original usa)
+openweathermap:
+  enabled: true
+  api_key: "SUA_CHAVE_OPENWEATHERMAP"
+  city: "Sao Joaquim da Barra,BR"
