@@ -2,3 +2,7 @@
 .pio/
 firmware/.pio/
 collector/config.yaml
+
+__pycache__/
+*.pyc
+firmware/*.bin
