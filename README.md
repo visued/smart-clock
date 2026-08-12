@@ -24,6 +24,13 @@ com tema de terminal CRT e **easter egg animado de saldo** nas contas de IA.
 
 *Interface do coletor (ativar/desativar provedores, chaves, limites) e o relógio rodando o firmware.*
 
+## 🛒 Onde comprar
+
+![Relógio SmartClock](relogio.png)
+
+Quer montar o seu? Compre o relógio **JUZIPi SD PRO** ("Smart Weather Clock") aqui:
+[Comprar na AliExpress](https://s.click.aliexpress.com/e/_msaW5j1)
+
 ## ✨ O que a tela mostra
 
 - **Relógio 7-segmento** verde-fósforo com sombra e dois-pontos piscando, scanlines de CRT
