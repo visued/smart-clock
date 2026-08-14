@@ -430,7 +430,7 @@ void drawCardStatic(int i) {
       }
     }
   }
-  int mx = (provs[i].limitCount > 0) ? 11 : 13;   // limites precisam de espaço p/ % global
+  int mx = 13;   // "5h 100% 14:58" = 13 chars — 156px até x=208, limpa o LED (x>=219)
   if (r1.length() > mx) r1 = r1.substring(0, mx);
   if (r2.length() > mx) r2 = r2.substring(0, mx);
   tft.setTextColor(c1, CARD);
@@ -438,16 +438,6 @@ void drawCardStatic(int i) {
   tft.setTextColor(c2, CARD);
   tft.drawString(r2, 52, y + 21);
 
-  // % global (pior limite) no canto superior direito — FONT2, só quando há limites
-  if (provs[i].limitCount > 0 && pct >= 0.0f) {
-    tft.setTextDatum(MR_DATUM);
-    tft.setTextSize(2);   // FONT2 8x16
-    char b[8];
-    snprintf(b, sizeof(b), "%.0f%%", pct);
-    tft.setTextColor(usageColor(pct), CARD);
-    tft.drawString(b, 232, y + 4);
-    tft.setTextDatum(TL_DATUM);
-  }
 
   tft.drawCircle(225, y + 24, 6, 0x2945);   // anel do LED (estático)
 }

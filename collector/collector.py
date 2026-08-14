@@ -12,6 +12,7 @@ Uso:
 """
 import argparse
 import json
+import unicodedata
 import os
 import shutil
 import threading
@@ -127,7 +128,11 @@ def _fmt_reset(ms, tz="America/Sao_Paulo"):
     return dt.strftime("%d/%m")
 
 
-# rótulo curto (<=2 chars, o firmware trunca) por tipo de limite do Z.ai
+def _ascii(s):
+    """Fonte do display do firmware (GLCD) cobre só ASCII: normaliza acentos
+    (céu -> ceu). Aplicado só no que vai para o relógio (/usage)."""
+    return unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode()
+
 _LIMIT_LABEL = {
     "CREDIT_LIMIT": "CR",
     "TIME_LIMIT": "T",
@@ -304,13 +309,21 @@ class Collector:
                     "id": pid,
                     "name": pcfg.get("display_name", pid),
                     "percent": 0.0,
-                    "label": f"erro: {err}"[:40],
+                    "label": _ascii(f"erro: {err}")[:40],
                     "reset": "",
                     "state": "erro",
                     "ok": True,   # fallback: provedor + 0% mantém a tela do relógio completa
                 })
                 continue
-            out.append(dict(res))
+            res = dict(res)  # cópia: relógio recebe ASCII (fonte GLCD), cache interno preserva UTF-8
+            for k in ("name", "label", "reset"):
+                if res.get(k):
+                    res[k] = _ascii(res[k])
+            for lim in res.get("limits") or []:
+                for k in ("label", "reset"):
+                    if lim.get(k):
+                        lim[k] = _ascii(lim[k])
+            out.append(res)
 
         # clima (linha de clima do relógio) — cache próprio de 5 min
         weather = {"ok": False}
@@ -329,6 +342,8 @@ class Collector:
                     wres = None
             if wres is not None:
                 weather = dict(wres)
+                if weather.get("condition"):
+                    weather["condition"] = _ascii(weather["condition"])
 
         return {
             "updated": time.strftime("%Y-%m-%dT%H:%M:%S"),

@@ -45,8 +45,8 @@ BLACK = (0, 0, 0)
 DS_BLUE = (77, 107, 254)
 OC_AMBER = (253, 154, 0)
 
-INVERT_OVERRIDES = {"deepseek": "white", "ollama": "keep", "ollama_cloud": "keep"}
-BADGE_COLORS = {"deepseek": DS_BLUE, "ollama": (255, 255, 255), "ollama_cloud": (255, 255, 255)}
+INVERT_OVERRIDES = {"deepseek": "white", "ollama": "keep", "ollama_cloud": "keep", "zai": "white"}
+BADGE_COLORS = {"deepseek": DS_BLUE, "ollama": (255, 255, 255), "ollama_cloud": (255, 255, 255), "zai": BLACK}
 
 # 7-segmento: segmentos a-g por digito
 SEG = {
@@ -274,9 +274,6 @@ def draw_card(d, img, prov, y, frame, fword, fdate, fbig, fsmall):
     for k, (txt, c) in enumerate(rows):
         d.text((52, y + 3 + k * 18), txt, font=fword, fill=c, anchor="la")
 
-    # % global (pior limite) no canto superior direito — 16px, só quando há limites
-    if limits and pct is not None and pct >= 0:
-        d.text((232, y + 4), f"{pct:.0f}%", font=fdate, fill=usage_color(pct), anchor="ra")
 
     # LED de status (anel + dot)
     d.ellipse((219, y + 18, 231, y + 30), outline=(19, 19, 19))
