@@ -208,7 +208,53 @@ def zai(cfg):
         return manual({**cfg, "id": "zai", "display_name": cfg.get("display_name", "Z.ai GLM")})
 
 
-ADAPTERS = {"deepseek": deepseek, "ollama_cloud": manual, "zai": zai}
+def ollama_cloud(cfg):
+    """Ollama Cloud — quota real via GET https://ollama.com/api/usage
+    (não documentado; acompanha ollama/ollama#12532). "usage" é fração
+    (0.399 = 39.9%). Reset: janelas de 5h/7d cujo alinhamento não é
+    publicamente verificável — omitido de propósito. Sem chave = card
+    sem_chave; endpoint quebrar -> modo manual (budget/used/limits)."""
+    key = str(cfg.get("api_key", "")).strip()
+    if not key or "TROQUE" in key:
+        return {
+            "id": "ollama_cloud",
+            "name": cfg.get("display_name", "Ollama Cloud"),
+            "percent": 0.0,
+            "label": "sem chave de API",
+            "reset": "",
+            "state": "sem_chave",
+            "limits": [],
+            "ok": True,
+        }
+    try:
+        data = fetch_json(
+            "https://ollama.com/api/usage",
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        limits = data.get("limits") or {}
+        rows = []
+        for field, label in (("session", "5h"), ("weekly", "1w")):
+            u = (limits.get(field) or {}).get("usage")
+            if u is not None:
+                rows.append({"label": label, "percent": round(float(u) * 100, 1), "reset": ""})
+        pcts = [r["percent"] for r in rows]
+        pct = max(pcts) if pcts else None
+        return {
+            "id": "ollama_cloud",
+            "name": cfg.get("display_name", "Ollama Cloud"),
+            "percent": pct,
+            "label": "cloud",
+            "reset": "",
+            "state": ("sem_saldo" if pct is not None and pct >= 100 else "saldo"),
+            "limits": rows,
+            "ok": True,
+        }
+    except Exception:  # noqa: BLE001 — endpoint não documentado pode mudar/desaparecer
+        return manual({**cfg, "id": "ollama_cloud",
+                       "display_name": cfg.get("display_name", "Ollama Cloud")})
+
+
+ADAPTERS = {"deepseek": deepseek, "ollama_cloud": ollama_cloud, "zai": zai}
 
 
 def openweathermap(cfg):

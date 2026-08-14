@@ -15,23 +15,24 @@ providers:
     budget: 50          # orçamento mensal em CNY para calcular % de uso (0 = sem %)
     display_name: "DeepSeek"
 
-  # Ollama Cloud: NÃO existe API pública de quota (issue ollama/ollama#16448).
-  # A % é manual: olhe o dashboard em ollama.com e preencha "used".
+  # Ollama Cloud: quota REAL via GET https://ollama.com/api/usage
+  # (não documentado — acompanhe ollama/ollama#12532). Chave: ollama.com -> Cloud -> API Keys.
+  # Mostra % da sessão (5h) e semanal. Reset: janelas de 5h/7d cujo alinhamento não é
+  # verificável, então o card não mostra horário. Se o endpoint mudar/quebrar,
+  # cai no modo manual (budget/used/limits abaixo).
   ollama_cloud:
     enabled: true
-    budget: 100         # limite mensal (unidade arbitrária)
-    used: 0             # preencher manualmente
-    reset: "reseta: 10/08 00:00"   # texto livre mostrado no card do relógio
-    # limites extras (ex.: horário e semanal) — cada um vira "H45% W60%" no card
-    limits:
-      - label: "H"      # limite por horas/sessão
-        used: 45
-        budget: 100
-        reset: "em 3h"
-      - label: "W"      # limite semanal
-        used: 60
-        budget: 100
-        reset: "2d"
+    api_key: "TROQUE_AQUI"
+    # fallback manual (usado se o endpoint de quota falhar):
+    budget: 100
+    used: 0
+    reset: ""
+    # limites manuais extras (fallback): label <= 2 chars
+    # limits:
+    #   - label: "H"
+    #     used: 45
+    #     budget: 100
+    #     reset: "em 3h"
     display_name: "Ollama Cloud"
 
   # Z.ai (GLM): quota REAL via endpoint não-oficial de monitoramento
