@@ -20,7 +20,7 @@ com tema de terminal CRT e **easter egg animado de saldo** nas contas de IA.
 
 | Interface web do coletor | Relógio configurado |
 |---|---|
-| ![Coletor](docs/collector-ui.png) | ![Relógio](assets/device.jpeg) |
+| ![Coletor](docs/collector-ui.png) | ![Relógio](assets/device.jpeg?v=2) |
 
 *Interface do coletor (ativar/desativar provedores, chaves, limites) e o relógio rodando o firmware.*
 
