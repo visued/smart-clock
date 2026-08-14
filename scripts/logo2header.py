@@ -20,6 +20,7 @@ LOGO_MODE = {
     "deepseek": "white",     # baleia branca sobre badge azul da marca
     "ollama": "keep",        # llama preta sobre badge branco
     "ollama_cloud": "keep",
+    "zai": "white",          # "Z" branco sobre badge preto
 }
 
 # cor do badge por provedor (fundo do logo no card)
@@ -27,6 +28,7 @@ BADGE_COLORS = {
     "deepseek": 0x4B5F,     # azul DeepSeek
     "ollama": 0xFFFF,       # branco (llama preta)
     "ollama_cloud": 0xFFFF,
+    "zai": 0x0000,          # preto (fundo do logo oficial: "Z" branco)
 }
 
 

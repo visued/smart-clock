@@ -96,6 +96,7 @@ com prefixo `SDP`. O WiFi salvo é reutilizado. Config do relógio: URL do colet
 |---|---|---|
 | **DeepSeek** | API real `GET /user/balance` (chave admin, conta pré-paga) | sem reset (saldo) |
 | **Ollama Cloud** | Manual (sem API pública de quota — [ollama/ollama#16448](https://github.com/ollama/ollama/issues/16448)) | texto livre por limite |
+| **Z.ai GLM** | Quota real via endpoint de monitoramento (não-oficial — pode mudar) + fallback manual | reset por limite |
 | **Qwen, Kimi, Claude, ChatGPT...** | Manual (`used`/`budget` + limites) | texto livre por limite |
 
 Cada provedor aceita **limites extras** (sessão/semanal/mensal): rótulo, usado, budget e reset.

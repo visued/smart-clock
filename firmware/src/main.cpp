@@ -373,6 +373,7 @@ void drawCardStatic(int i) {
   const uint16_t* logo = logoFor(provs[i].id);
   if (logo) {
     tft.fillRoundRect(12, y + 1, LOGO_SIZE, LOGO_SIZE, 8, badgeFor(provs[i].id));
+    tft.setSwapBytes(true);  // painel BGR: pushImage precisa dos bytes trocados
     tft.pushImage(12, y + 1, LOGO_SIZE, LOGO_SIZE, (uint16_t*)logo);
   } else {
     uint16_t bcol = badgeColor(provs[i].id);

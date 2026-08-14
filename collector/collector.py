@@ -18,6 +18,8 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import yaml
@@ -26,6 +28,7 @@ DEFAULT_CONFIG = {
     "listen": "0.0.0.0",
     "port": 8787,
     "cache_ttl": 60,
+    "timezone": "America/Sao_Paulo",
     "providers": {},
 }
 
@@ -108,8 +111,99 @@ def manual(cfg):
         "ok": True,
     }
 
+def _fmt_reset(ms, tz="America/Sao_Paulo"):
+    """nextResetTime (ms epoch) -> horário/data absoluta no fuso do usuário.
+    Reseta hoje -> "HH:MM"; outra data -> "DD/MM"."""
+    if not ms:
+        return ""
+    try:
+        tzinfo = ZoneInfo(tz)
+        dt = datetime.fromtimestamp(ms / 1000, tzinfo)
+        now = datetime.now(tzinfo)
+    except (OSError, ValueError, KeyError):
+        return ""
+    if dt.date() == now.date():
+        return dt.strftime("%H:%M")
+    return dt.strftime("%d/%m")
 
-ADAPTERS = {"deepseek": deepseek, "ollama_cloud": manual}
+
+# rótulo curto (<=2 chars, o firmware trunca) por tipo de limite do Z.ai
+_LIMIT_LABEL = {
+    "CREDIT_LIMIT": "CR",
+    "TIME_LIMIT": "T",
+    "TOKENS_LIMIT": "TK",
+    "RATE_LIMIT": "R",
+    "TIMES_LIMIT": "N",
+    "SESSION_LIMIT": "S",
+}
+
+# unidade de tempo do Z.ai (observado na API): 3=hora (5-hour), 6=semana (weekly)
+_ZAI_UNIT_SUFFIX = {3: "h", 6: "w"}
+
+
+def _zai_label(lim):
+    """Rótulo do limite: '5h' (5-hour), '1w' (weekly). Fallback por type."""
+    num = lim.get("number")
+    suffix = _ZAI_UNIT_SUFFIX.get(lim.get("unit"), "")
+    if num is not None and suffix:
+        return f"{num}{suffix}"
+    return _LIMIT_LABEL.get(lim.get("type"), "C")
+
+
+def zai(cfg):
+    """Z.ai (GLM) — usa o endpoint NÃO-oficial de monitoramento de quota
+    (GET /api/monitor/usage/quota/limit). Sem chave = card em 0% (sem_chave).
+    Se o endpoint quebrar (mudar/404), degrada para o modo manual
+    (budget/used/limits do config)."""
+    key = str(cfg.get("api_key", "")).strip()
+    if not key or "TROQUE" in key:
+        return {
+            "id": "zai",
+            "name": cfg.get("display_name", "Z.ai GLM"),
+            "percent": 0.0,
+            "label": "sem chave de API",
+            "reset": "",
+            "state": "sem_chave",
+            "limits": [],
+            "ok": True,
+        }
+    try:
+        data = fetch_json(
+            "https://api.z.ai/api/monitor/usage/quota/limit",
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        body = data.get("data") or {}
+        level = str(body.get("level") or "")
+        tz = str(cfg.get("timezone") or "America/Sao_Paulo")
+        raw = sorted(
+            (body.get("limits") or []),
+            key=lambda l: l.get("nextResetTime") or float("inf"),
+        )
+        limits = []
+        for lim in raw:
+            pct = lim.get("percentage")
+            limits.append({
+                "label": _zai_label(lim),
+                "percent": float(pct) if pct is not None else None,
+                "reset": _fmt_reset(lim.get("nextResetTime"), tz),
+            })
+        pcts = [l["percent"] for l in limits if l["percent"] is not None]
+        pct = max(pcts) if pcts else None
+        return {
+            "id": "zai",
+            "name": cfg.get("display_name", "Z.ai GLM"),
+            "percent": pct,
+            "label": f"plano {level}" if level else "Z.ai GLM",
+            "reset": "",
+            "state": ("sem_saldo" if pct is not None and pct >= 100 else "saldo"),
+            "limits": limits,
+            "ok": True,
+        }
+    except Exception:  # noqa: BLE001 — endpoint não-oficial pode mudar/desaparecer
+        return manual({**cfg, "id": "zai", "display_name": cfg.get("display_name", "Z.ai GLM")})
+
+
+ADAPTERS = {"deepseek": deepseek, "ollama_cloud": manual, "zai": zai}
 
 
 def openweathermap(cfg):
@@ -145,7 +239,8 @@ class Collector:
 
     def refresh(self, pid, pcfg):
         try:
-            res = ADAPTERS.get(pid, manual)({**pcfg, "id": pid})
+            tz = self.cfg.get("timezone", "America/Sao_Paulo")
+            res = ADAPTERS.get(pid, manual)({**pcfg, "id": pid, "timezone": tz})
             with self.lock:
                 self.cache[pid] = (time.time(), res, None)
         except Exception as exc:  # noqa: BLE001 — falha de provedor não derruba o serviço
@@ -435,7 +530,8 @@ class Handler(BaseHTTPRequestHandler):
             pid = str(body.get("id", ""))
             pcfg = body.get("config", {})
             try:
-                res = ADAPTERS.get(pid, manual)({**pcfg, "id": pid})
+                tz = self.server.collector.cfg.get("timezone", "America/Sao_Paulo")
+                res = ADAPTERS.get(pid, manual)({**pcfg, "id": pid, "timezone": tz})
                 self._json({"ok": True, "result": res})
             except Exception as exc:  # noqa: BLE001
                 self._json({"ok": False, "error": str(exc)})

@@ -4,6 +4,7 @@
 listen: 0.0.0.0
 port: 8787
 cache_ttl: 60          # segundos entre consultas reais ao provedor
+timezone: America/Sao_Paulo  # fuso dos horários de reset mostrados no relógio
 
 providers:
   # DeepSeek: saldo real via GET https://api.deepseek.com/user/balance
@@ -32,6 +33,19 @@ providers:
         budget: 100
         reset: "2d"
     display_name: "Ollama Cloud"
+
+  # Z.ai (GLM): quota REAL via endpoint não-oficial de monitoramento
+  # (GET https://api.z.ai/api/monitor/usage/quota/limit). Chave: z.ai -> API Keys.
+  # Mostra plano + limites de crédito/sessão com reset. Se o endpoint mudar/quebrar,
+  # cai no modo manual (budget/used/reset abaixo).
+  zai:
+    enabled: true
+    api_key: "TROQUE_AQUI"
+    # fallback manual (usado se o endpoint de quota falhar):
+    budget: 100
+    used: 0
+    reset: ""
+    display_name: "Z.ai GLM"
 
 # Clima atual (linha de clima no relógio — mesmo serviço que o firmware original usa)
 openweathermap:
