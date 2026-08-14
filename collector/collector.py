@@ -34,8 +34,8 @@ DEFAULT_CONFIG = {
 }
 
 
-def fetch_json(url, headers=None, timeout=10):
-    req = urllib.request.Request(url, headers=headers or {})
+def fetch_json(url, headers=None, timeout=10, method=None):
+    req = urllib.request.Request(url, headers=headers or {}, method=method)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
@@ -208,12 +208,29 @@ def zai(cfg):
         return manual({**cfg, "id": "zai", "display_name": cfg.get("display_name", "Z.ai GLM")})
 
 
+def _ollama_resets():
+    """Reset do Ollama (best-effort, não documentado): sessão = próxima borda
+    de 5h alinhada à epoch; semanal = próxima segunda 00:00 UTC. Âncora da
+    semana corroborada pela janela 'last_4_weeks' da própria API (sempre
+    começa em segunda). Se estiver errado, só o horário muda — % continua real.
+    -> (reset_sessao_ms, reset_semanal_ms)"""
+    now = int(time.time())
+    sess = (now // 18000 + 1) * 18000 * 1000
+    days = now // 86400
+    dow = (days + 3) % 7      # 1970-01-01 era quinta; 0 = segunda
+    ahead = (7 - dow) % 7     # dias até a próxima segunda 00:00 UTC
+    if ahead == 0:
+        ahead = 7             # hoje é segunda: próxima semana
+    week = (days + ahead) * 86400 * 1000
+    return sess, week
+
+
 def ollama_cloud(cfg):
     """Ollama Cloud — quota real via GET https://ollama.com/api/usage
     (não documentado; acompanha ollama/ollama#12532). "usage" é fração
-    (0.399 = 39.9%). Reset: janelas de 5h/7d cujo alinhamento não é
-    publicamente verificável — omitido de propósito. Sem chave = card
-    sem_chave; endpoint quebrar -> modo manual (budget/used/limits)."""
+    (0.399 = 39.9%). Plano via POST /api/me ("plano pro"). Reset computado
+    por _ollama_resets (best-effort). Sem chave = card sem_chave;
+    endpoint quebrar -> modo manual (budget/used/limits)."""
     key = str(cfg.get("api_key", "")).strip()
     if not key or "TROQUE" in key:
         return {
@@ -231,19 +248,38 @@ def ollama_cloud(cfg):
             "https://ollama.com/api/usage",
             headers={"Authorization": f"Bearer {key}"},
         )
+        plan = ""
+        try:
+            me = fetch_json(
+                "https://ollama.com/api/me",
+                method="POST",
+                headers={"Authorization": f"Bearer {key}"},
+            )
+            plan = str(me.get("Plan") or "").lower()
+        except Exception:  # noqa: BLE001 — /api/me é opcional (só enriquece o label)
+            pass
+        tz = str(cfg.get("timezone") or "America/Sao_Paulo")
+        sess_ms, week_ms = _ollama_resets()
         limits = data.get("limits") or {}
         rows = []
-        for field, label in (("session", "5h"), ("weekly", "1w")):
+        for field, label, reset_ms in (
+            ("session", "5h", sess_ms),
+            ("weekly", "1w", week_ms),
+        ):
             u = (limits.get(field) or {}).get("usage")
             if u is not None:
-                rows.append({"label": label, "percent": round(float(u) * 100, 1), "reset": ""})
+                rows.append({
+                    "label": label,
+                    "percent": round(float(u) * 100, 1),
+                    "reset": _fmt_reset(reset_ms, tz),
+                })
         pcts = [r["percent"] for r in rows]
         pct = max(pcts) if pcts else None
         return {
             "id": "ollama_cloud",
             "name": cfg.get("display_name", "Ollama Cloud"),
             "percent": pct,
-            "label": "cloud",
+            "label": f"plano {plan}" if plan else "cloud",
             "reset": "",
             "state": ("sem_saldo" if pct is not None and pct >= 100 else "saldo"),
             "limits": rows,

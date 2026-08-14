@@ -17,9 +17,9 @@ providers:
 
   # Ollama Cloud: quota REAL via GET https://ollama.com/api/usage
   # (não documentado — acompanhe ollama/ollama#12532). Chave: ollama.com -> Cloud -> API Keys.
-  # Mostra % da sessão (5h) e semanal. Reset: janelas de 5h/7d cujo alinhamento não é
-  # verificável, então o card não mostra horário. Se o endpoint mudar/quebrar,
-  # cai no modo manual (budget/used/limits abaixo).
+  # Mostra plano + % da sessão (5h) e semanal. Reset COMPUTADO (best-effort):
+  # sessão = borda de 5h alinhada à epoch; semanal = segunda 00:00 UTC. Se o
+  # endpoint mudar/quebrar, cai no modo manual (budget/used/limits abaixo).
   ollama_cloud:
     enabled: true
     api_key: "TROQUE_AQUI"
