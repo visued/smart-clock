@@ -17,6 +17,7 @@ SIZE_DEFAULT = 36
 
 # Modo por logo: "white" = logo branco puro (badge colorido), "keep" = cor original
 LOGO_MODE = {
+    "claude": "white",       # asterisco branco sobre badge laranja Claude
     "deepseek": "white",     # baleia branca sobre badge azul da marca
     "ollama": "keep",        # llama preta sobre badge branco
     "ollama_cloud": "keep",
@@ -25,6 +26,7 @@ LOGO_MODE = {
 
 # cor do badge por provedor (fundo do logo no card)
 BADGE_COLORS = {
+    "claude": 0xDBAA,       # laranja Claude (#D97757)
     "deepseek": 0x4B5F,     # azul DeepSeek
     "ollama": 0xFFFF,       # branco (llama preta)
     "ollama_cloud": 0xFFFF,

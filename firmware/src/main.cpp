@@ -81,6 +81,7 @@ struct Badge { const char* id; const char* letters; uint16_t color; };
 static const Badge BADGES[] = {
   {"deepseek",     "DS", DS_BLUE},
   {"ollama_cloud", "OC", OC_AMBER},
+  {"claude",       "CL", 0xDBAA},
   {nullptr, nullptr, 0}
 };
 

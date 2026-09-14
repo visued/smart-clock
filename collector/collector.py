@@ -4,7 +4,7 @@ para o relógio (firmware custom) via GET /usage.
 
 Página web (GET /): ativar/desativar provedores, definir chaves/budget/reset.
 Provedores sem adapter dedicado usam o modo manual (used/budget/reset livres),
-então qualquer provedor futuro (Qwen, Kimi, Claude, ChatGPT...) pode ser
+então qualquer provedor futuro (Qwen, Kimi, ChatGPT...) pode ser
 adicionado pela interface.
 
 Uso:
@@ -290,7 +290,90 @@ def ollama_cloud(cfg):
                        "display_name": cfg.get("display_name", "Ollama Cloud")})
 
 
-ADAPTERS = {"deepseek": deepseek, "ollama_cloud": ollama_cloud, "zai": zai}
+def _iso_ms(s):
+    """'2026-09-14T08:40:00.48+00:00' -> ms epoch (None se vazio/inválido)."""
+    if not s:
+        return None
+    try:
+        return int(datetime.fromisoformat(str(s).replace("Z", "+00:00")).timestamp() * 1000)
+    except ValueError:
+        return None
+
+
+def _claude_token(cfg):
+    """Token OAuth do Claude (assinatura Pro/Max). Ordem: api_key do config
+    (token colado manualmente) -> credenciais do Claude Code em
+    $CLAUDE_CREDENTIALS ou ~/.claude/.credentials.json (renovadas pelo próprio
+    Claude Code). -> (token, plano) ou (None, "")."""
+    key = str(cfg.get("api_key", "")).strip()
+    if key and "TROQUE" not in key:
+        return key, ""
+    path = os.environ.get("CLAUDE_CREDENTIALS") or os.path.expanduser("~/.claude/.credentials.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            oauth = json.load(fh).get("claudeAiOauth") or {}
+    except (OSError, json.JSONDecodeError):
+        return None, ""
+    return oauth.get("accessToken"), str(oauth.get("subscriptionType") or "")
+
+
+def claude(cfg):
+    """Claude (Pro/Max) — quota real via GET api.anthropic.com/api/oauth/usage
+    (não documentado; é o que o /usage do Claude Code consulta). Autentica com
+    o token OAuth do login do Claude Code, só leitura — o coletor nunca renova
+    o token (renovar invalidaria o login do Claude Code). "utilization" já é %
+    e resets_at vem da API. Sem credenciais = card sem_chave; token expirado
+    ou endpoint quebrar -> modo manual (budget/used/limits)."""
+    token, plan = _claude_token(cfg)
+    if not token:
+        return {
+            "id": "claude",
+            "name": cfg.get("display_name", "Claude"),
+            "percent": 0.0,
+            "label": "sem credenciais",
+            "reset": "",
+            "state": "sem_chave",
+            "limits": [],
+            "ok": True,
+        }
+    try:
+        data = fetch_json(
+            "https://api.anthropic.com/api/oauth/usage",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "anthropic-beta": "oauth-2025-04-20",
+                "User-Agent": "smartclock-collector",
+            },
+        )
+        tz = str(cfg.get("timezone") or "America/Sao_Paulo")
+        rows = []
+        for field, label in (("five_hour", "5h"), ("seven_day", "1w")):
+            win = data.get(field) or {}
+            u = win.get("utilization")
+            if u is not None:
+                rows.append({
+                    "label": label,
+                    "percent": round(float(u), 1),
+                    "reset": _fmt_reset(_iso_ms(win.get("resets_at")), tz),
+                })
+        if not rows:
+            raise ValueError("resposta sem five_hour/seven_day")
+        pct = max(r["percent"] for r in rows)
+        return {
+            "id": "claude",
+            "name": cfg.get("display_name", "Claude"),
+            "percent": pct,
+            "label": f"plano {plan}" if plan else "Claude",
+            "reset": "",
+            "state": ("sem_saldo" if pct >= 100 else "saldo"),
+            "limits": rows,
+            "ok": True,
+        }
+    except Exception:  # noqa: BLE001 — endpoint não documentado / token expirado
+        return manual({**cfg, "id": "claude", "display_name": cfg.get("display_name", "Claude")})
+
+
+ADAPTERS = {"deepseek": deepseek, "ollama_cloud": ollama_cloud, "zai": zai, "claude": claude}
 
 
 def openweathermap(cfg):
@@ -458,8 +541,8 @@ a{color:#4d6bfe}
 <h1>SmartClock AI — Coletor</h1>
 <p><a href="/usage">JSON para o relógio</a></p>
 <h2>Provedores (cards na tela do relógio)</h2>
-<p style="font-size:13px;color:#8e8e93">Sem chave = card mostra 0% (fallback). DeepSeek usa saldo real
-por API. Qualquer outro provedor (Qwen, Kimi, Claude, ChatGPT...) é modo manual:
+<p style="font-size:13px;color:#8e8e93">Sem chave = card mostra 0% (fallback). DeepSeek, Ollama, Z.ai e Claude usam quota real
+por API. Qualquer outro provedor (Qwen, Kimi, ChatGPT...) é modo manual:
 preencha <b>budget</b> (limite) e <b>usado</b> (atual), e <b>reset</b> = quando o limite reseta.</p>
 <div id="provs"></div>
 <button type="button" class="gray" onclick="addProv()">+ Adicionar provedor</button>

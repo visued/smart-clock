@@ -45,8 +45,8 @@ BLACK = (0, 0, 0)
 DS_BLUE = (77, 107, 254)
 OC_AMBER = (253, 154, 0)
 
-INVERT_OVERRIDES = {"deepseek": "white", "ollama": "keep", "ollama_cloud": "keep", "zai": "white"}
-BADGE_COLORS = {"deepseek": DS_BLUE, "ollama": (255, 255, 255), "ollama_cloud": (255, 255, 255), "zai": BLACK}
+INVERT_OVERRIDES = {"claude": "white", "deepseek": "white", "ollama": "keep", "ollama_cloud": "keep", "zai": "white"}
+BADGE_COLORS = {"claude": (217, 119, 87), "deepseek": DS_BLUE, "ollama": (255, 255, 255), "ollama_cloud": (255, 255, 255), "zai": BLACK}
 
 # 7-segmento: segmentos a-g por digito
 SEG = {
@@ -241,7 +241,7 @@ def draw_card(d, img, prov, y, frame, fword, fdate, fbig, fsmall):
         logo = process_logo(lpath, pid=prov["id"])
         img.paste(logo, (12, y + 1))
     else:
-        letters = {"deepseek": "DS", "ollama_cloud": "OC"}.get(prov["id"], "AI")[:2]
+        letters = {"claude": "CL", "deepseek": "DS", "ollama_cloud": "OC"}.get(prov["id"], "AI")[:2]
         d.rounded_rectangle((12, y + 4, 40, y + 32), radius=7, fill=DS_BLUE)
         d.text((26, y + 18), letters, font=fword, fill=BLACK, anchor="mm")
 

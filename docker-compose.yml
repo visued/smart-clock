@@ -8,4 +8,10 @@ services:
     volumes:
       - ./collector/config.yaml:/app/config.yaml
       - ./collector/collector.py:/app/collector.py:ro
+      # Claude (Pro/Max): token OAuth do login do Claude Code, só leitura.
+      # Diretório (não o arquivo): o Claude Code regrava .credentials.json ao renovar
+      # o token, e bind mount de arquivo único ficaria preso na versão antiga.
+      - ${HOME}/.claude:/claude:ro
+    environment:
+      - CLAUDE_CREDENTIALS=/claude/.credentials.json
     restart: unless-stopped

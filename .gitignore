@@ -2,6 +2,7 @@
 .pio/
 firmware/.pio/
 collector/config.yaml
+collector/config.yaml.bak
 
 __pycache__/
 *.pyc

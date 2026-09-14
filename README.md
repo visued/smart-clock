@@ -97,7 +97,8 @@ com prefixo `SDP`. O WiFi salvo é reutilizado. Config do relógio: URL do colet
 | **DeepSeek** | API real `GET /user/balance` (chave admin, conta pré-paga) | sem reset (saldo) |
 | **Ollama Cloud** | Quota real via `GET ollama.com/api/usage` (não documentado — [ollama/ollama#12532](https://github.com/ollama/ollama/issues/12532)) + plano via `/api/me` + fallback manual | reset computado (sessão: borda de 5h; semanal: segunda 00:00 UTC) |
 | **Z.ai GLM** | Quota real via endpoint de monitoramento (não-oficial — pode mudar) + fallback manual | reset por limite |
-| **Qwen, Kimi, Claude, ChatGPT...** | Manual (`used`/`budget` + limites) | texto livre por limite |
+| **Claude (Pro/Max)** | Quota real via `GET api.anthropic.com/api/oauth/usage` (não documentado — o mesmo do `/usage` do Claude Code) com o token OAuth do login do Claude Code (`~/.claude/.credentials.json`, montado read-only no Docker) + fallback manual | reset por limite (sessão 5h / semanal) |
+| **Qwen, Kimi, ChatGPT...** | Manual (`used`/`budget` + limites) | texto livre por limite |
 
 Cada provedor aceita **limites extras** (sessão/semanal/mensal): rótulo, usado, budget e reset.
 

@@ -48,6 +48,20 @@ providers:
     reset: ""
     display_name: "Z.ai GLM"
 
+  # Claude (assinatura Pro/Max): quota REAL via GET https://api.anthropic.com/api/oauth/usage
+  # (não documentado — é o que o /usage do Claude Code consulta). Não usa chave de API:
+  # lê o token OAuth do login do Claude Code em ~/.claude/.credentials.json
+  # (no Docker: montado em /claude, ver docker-compose.yml). O coletor só LÊ o token;
+  # quem renova é o Claude Code — use-o nesta máquina de vez em quando. Token expirado
+  # ou endpoint quebrar -> modo manual (budget/used/reset abaixo).
+  claude:
+    enabled: true
+    api_key: ""         # opcional: token OAuth colado (senão usa o do Claude Code)
+    budget: 100
+    used: 0
+    reset: ""
+    display_name: "Claude"
+
 # Clima atual (linha de clima no relógio — mesmo serviço que o firmware original usa)
 openweathermap:
   enabled: true
