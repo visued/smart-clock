@@ -13,7 +13,7 @@ import sys
 
 from PIL import Image
 
-SIZE_DEFAULT = 36
+SIZE_DEFAULT = 34   # = LOGO_SIZE do card de 36px (4 cards na tela)
 
 # Modo por logo: "white" = logo branco puro (badge colorido), "keep" = cor original
 LOGO_MODE = {

@@ -39,6 +39,9 @@
 #define OC_AMBER      0xFD20
 
 #define MAX_PROVIDERS 6
+#define MAX_CARDS     4          // cards visíveis na tela (4 x 36px abaixo do relógio)
+#define CARD_H        36
+#define CARDS_Y       93         // topo da região de cards (93..239)
 #define ANIM_MS       250UL      // tick de animação
 
 // ---------- config (persistida em /config.json) ----------
@@ -71,7 +74,7 @@ Weather wth;
 String lastFetchErr = "nunca";
 
 int animFrame = 0;
-int clockColonX = 120;           // posição dos dois-pontos do relógio
+bool clockSynced = false;        // dígitos desenhados (NTP ok) — só então os dois-pontos piscam
 
 TFT_eSPI tft = TFT_eSPI();
 ESP8266WebServer server(80);
@@ -192,7 +195,7 @@ void fillBg(int x, int y, int w, int h) {
 }
 
 void drawTopRegion() {
-  fillBg(0, 0, 240, 24);
+  fillBg(0, 0, 240, 22);
   tft.setTextDatum(TL_DATUM);
   tft.setTextSize(2);   // FONT2 8x16
   time_t now = time(nullptr);
@@ -213,8 +216,8 @@ void drawTopRegion() {
   } else {
     tft.drawString(WiFi.localIP().toString(), 234, 3);
   }
-  tft.drawFastHLine(0, 23, 240, DIVIDER);
-  tft.drawFastHLine(6, 23, 44, PHOSPHOR);
+  tft.drawFastHLine(0, 21, 240, DIVIDER);
+  tft.drawFastHLine(6, 21, 44, PHOSPHOR);
 }
 
 void drawWeatherIcon(const String& code, int x, int y) {
@@ -246,67 +249,93 @@ void drawWeatherIcon(const String& code, int x, int y) {
 }
 
 void drawWeatherRegion() {
-  fillBg(0, 24, 240, 22);
+  fillBg(0, 22, 240, 20);
   if (!wth.ok) return;
   char b[40];
   snprintf(b, sizeof(b), "%.0fC %s", wth.temp, wth.cond.c_str());
   tft.setTextDatum(TL_DATUM);
   tft.setTextSize(2);
   tft.setTextColor(PHOSPHOR, BG);
-  tft.drawString(">", 6, 27);
+  tft.drawString(">", 6, 24);
   tft.setTextColor(WHITE, BG);
-  tft.drawString(b, 16, 27);
-  drawWeatherIcon(wth.icon, 214, 24);
+  tft.drawString(b, 16, 24);
+  drawWeatherIcon(wth.icon, 214, 22);
 }
 
-// dois-pontos do relógio 7-seg (piscam 500/500ms)
-void drawColon(int x, int y, bool on) {
-  tft.fillRect(x - 4, y, 8, 46, BG);
-  tft.drawFastHLine(x - 4, y + 3, 8, SCANLINE);
-  tft.drawFastHLine(x - 4, y + 43, 8, SCANLINE);
+// relógio 7-seg compacto (28px) desenhado com retângulos — região 42..73,
+// libera espaço para 4 cards. Geometria espelhada em scripts/preview.py.
+#define CLOCK_Y   44
+#define SEG_H     28
+#define SEG_W     18
+#define SEG_T     3
+#define SEG_INS   2
+#define SEG_P     22            // passo entre dígitos (largura + 4px)
+#define SEG_C     6             // espaço extra para os dois-pontos
+#define CLOCK_X0  (120 - (3 * SEG_P + SEG_C + SEG_W) / 2)
+#define COLON_X   (CLOCK_X0 + SEG_P + SEG_W + (SEG_P - SEG_W + SEG_C) / 2)
+
+// bits: a b c d e f g
+static const uint8_t SEG_MASK[10] = {0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F};
+
+void draw7seg(int x, int y, int digit, uint16_t color) {
+  uint8_t m = SEG_MASK[digit % 10];
+  int half = SEG_H / 2;
+  int span = SEG_W - 2 * SEG_INS;
+  if (m & 0x01) tft.fillRect(x + SEG_INS, y, span, SEG_T, color);                          // a
+  if (m & 0x02) tft.fillRect(x + SEG_W - SEG_T, y + SEG_INS, SEG_T, half - SEG_INS, color); // b
+  if (m & 0x04) tft.fillRect(x + SEG_W - SEG_T, y + half, SEG_T, half - SEG_INS, color);    // c
+  if (m & 0x08) tft.fillRect(x + SEG_INS, y + SEG_H - SEG_T, span, SEG_T, color);           // d
+  if (m & 0x10) tft.fillRect(x, y + half, SEG_T, half - SEG_INS, color);                    // e
+  if (m & 0x20) tft.fillRect(x, y + SEG_INS, SEG_T, half - SEG_INS, color);                 // f
+  if (m & 0x40) tft.fillRect(x + SEG_INS, y + half - SEG_T / 2, span, SEG_T, color);        // g
+}
+
+// dois-pontos do relógio (piscam 500/500ms); fillBg na fase da região 42
+void drawColon(bool on) {
+  if (!clockSynced) return;
+  fillBg(COLON_X - 3, 42, 7, 32);
   if (on) {
-    tft.fillCircle(x, y + 11, 3, PHOSPHOR);
-    tft.fillCircle(x, y + 35, 3, PHOSPHOR);
+    tft.fillCircle(COLON_X, CLOCK_Y + 9, 2, PHOSPHOR);
+    tft.fillCircle(COLON_X, CLOCK_Y + 19, 2, PHOSPHOR);
   }
 }
 
-// dígitos do relógio 7-seg (redesenhados só quando o minuto muda)
+// dígitos do relógio (redesenhados só quando o minuto muda)
 void drawClockDigits() {
-  fillBg(0, 46, 240, 52);
-  tft.setTextDatum(TC_DATUM);
+  fillBg(0, 42, 240, 32);
   time_t now = time(nullptr);
   struct tm* t = localtime(&now);
   if (t->tm_year < 120) {
-    tft.setTextSize(4);
+    clockSynced = false;
+    tft.setTextDatum(TC_DATUM);
+    tft.setTextSize(3);
     tft.setTextColor(GRAY, BG);
-    tft.drawString("--:--", 120, 60);
-    clockColonX = 120;
+    tft.drawString("--:--", 120, 47);
     return;
   }
-  char buf[8];
-  snprintf(buf, sizeof(buf), "%02d%02d", t->tm_hour, t->tm_min);  // sem dois-pontos
-  tft.setTextSize(7);              // FONT7 48px 7-segmento
-  tft.setTextColor(PHOSPHOR_DIM, BG);   // sombra +1,+1
-  tft.drawString(buf, 120, 47);
-  tft.setTextColor(PHOSPHOR, BG);
-  tft.drawString(buf, 120, 46);
-  clockColonX = 120;
-  drawColon(clockColonX, 52, animFrame % 2 == 0);
+  clockSynced = true;
+  int dg[4] = {t->tm_hour / 10, t->tm_hour % 10, t->tm_min / 10, t->tm_min % 10};
+  for (int i = 0; i < 4; i++) {
+    int x = CLOCK_X0 + i * SEG_P + (i >= 2 ? SEG_C : 0);
+    draw7seg(x + 1, CLOCK_Y + 1, dg[i], PHOSPHOR_DIM);  // sombra +1,+1
+    draw7seg(x, CLOCK_Y, dg[i], PHOSPHOR);
+  }
+  drawColon(animFrame % 2 == 0);
 }
 
 // segundos (região pequena, redraw por segundo)
 void drawSeconds(int s) {
-  fillBg(204, 62, 36, 24);
+  fillBg(204, 42, 36, 32);
   tft.setTextDatum(TL_DATUM);
   tft.setTextSize(2);              // FONT2 8x16
   tft.setTextColor(CYAN, BG);
   char buf[4];
   snprintf(buf, sizeof(buf), "%02d", s);
-  tft.drawString(buf, 210, 66);
+  tft.drawString(buf, 210, 50);
 }
 
 void drawStatusRegion() {
-  fillBg(0, 96, 240, 26);
+  fillBg(0, 74, 240, 18);
   tft.setTextDatum(TL_DATUM);
   tft.setTextSize(2);
   time_t now = time(nullptr);
@@ -327,10 +356,10 @@ void drawStatusRegion() {
     led = RED;
     snprintf(b, sizeof(b), "sem servico");
   }
-  tft.fillCircle(11, 109, 3, led);
+  tft.fillCircle(11, 83, 3, led);
   tft.setTextColor(led, BG);
-  tft.drawString(b, 20, 102);
-  tft.drawFastHLine(0, 122, 240, DIVIDER);
+  tft.drawString(b, 20, 76);
+  tft.drawFastHLine(0, 92, 240, DIVIDER);
 }
 
 // metadados por estado: (palavra, cor, cor dim, passos on, passos off a 250ms)
@@ -348,14 +377,16 @@ const StateMeta* stateMeta(const String& st) {
   return &STATES[3];
 }
 
-// posição vertical do card i (centraliza 1..3 cards na região 124..240)
+int cardCount() { return provCount > MAX_CARDS ? MAX_CARDS : provCount; }
+
+// posição vertical do card i (centraliza 1..4 cards na região 93..239)
 int cardY(int i) {
-  int n = provCount > 3 ? 3 : provCount;
-  int gap = n >= 3 ? 1 : 4;
-  int total = n * 38 + (n - 1) * gap;
-  int start = 124 + (116 - total) / 2;
-  if (start < 124) start = 124;
-  return start + i * (38 + gap);
+  int n = cardCount();
+  int gap = n >= MAX_CARDS ? 1 : 4;
+  int total = n * CARD_H + (n - 1) * gap;
+  int start = CARDS_Y + (240 - CARDS_Y - total) / 2;
+  if (start < CARDS_Y) start = CARDS_Y;
+  return start + i * (CARD_H + gap);
 }
 
 // parte estática do card (desenhada 1x; LED é redraw pequeno por tick)
@@ -366,9 +397,9 @@ void drawCardStatic(int i) {
   float pct = provs[i].percent;
   uint16_t border = (st == "sem_saldo") ? RED : CARD_BORDER;
 
-  tft.fillRoundRect(8, y, 224, 38, 6, CARD);
-  tft.drawRoundRect(8, y, 224, 38, 6, border);
-  tft.fillRect(8, y + 9, 3, 24, m->color);   // barra de acento
+  tft.fillRoundRect(8, y, 224, CARD_H, 6, CARD);
+  tft.drawRoundRect(8, y, 224, CARD_H, 6, border);
+  tft.fillRect(8, y + 8, 3, 20, m->color);   // barra de acento
 
   // logo sobre badge com a cor da marca (contraste alto)
   const uint16_t* logo = logoFor(provs[i].id);
@@ -435,9 +466,9 @@ void drawCardStatic(int i) {
   if (r1.length() > mx) r1 = r1.substring(0, mx);
   if (r2.length() > mx) r2 = r2.substring(0, mx);
   tft.setTextColor(c1, CARD);
-  tft.drawString(r1, 52, y + 3);
+  tft.drawString(r1, 52, y + 2);
   tft.setTextColor(c2, CARD);
-  tft.drawString(r2, 52, y + 21);
+  tft.drawString(r2, 52, y + 19);
 
 
   tft.drawCircle(225, y + 24, 6, 0x2945);   // anel do LED (estático)
@@ -456,15 +487,15 @@ void drawCardLed(int i, int frame) {
 }
 
 void drawWidgetRegion(int frame) {
-  fillBg(0, 124, 240, 116);
+  fillBg(0, CARDS_Y, 240, 240 - CARDS_Y);
   if (provCount == 0) {
     tft.setTextDatum(CC_DATUM);
     tft.setTextSize(2);
     tft.setTextColor(GRAY, BG);
-    tft.drawString("Sem provedores", 120, 180);
+    tft.drawString("Sem provedores", 120, 165);
     return;
   }
-  int n = provCount > 3 ? 3 : provCount;
+  int n = cardCount();
   for (int i = 0; i < n; i++) {
     drawCardStatic(i);
     drawCardLed(i, frame);
@@ -611,11 +642,11 @@ void loop() {
   if (now - lastAnim >= ANIM_MS) {
     lastAnim = now;
     animFrame++;
-    int n = provCount > 3 ? 3 : provCount;
+    int n = cardCount();
     for (int i = 0; i < n; i++) {
       drawCardLed(i, animFrame);
     }
-    drawColon(clockColonX, 52, animFrame % 2 == 0);
+    drawColon(animFrame % 2 == 0);
   }
 
   if (lastPollAttempt == 0 || now - lastPollAttempt >= (unsigned long)cfgUsageInterval * 1000UL) {

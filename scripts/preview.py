@@ -28,6 +28,7 @@ SIZE = 240
 BG = (8, 8, 8)
 SCANLINE = (0, 4, 0)
 CARD = (32, 32, 32)          # 0x2104
+MAX_CARDS, CARD_H, CARDS_Y, LOGO_SIZE = 4, 36, 93, 34   # = firmware
 CARD_BORDER = (41, 93, 90)
 DIVIDER = (49, 48, 49)
 GRAY = (148, 149, 148)       # 0x94B2
@@ -134,8 +135,7 @@ def fill_bg(d, x, y, w, h):
         d.line((x, yy, x + w - 1, yy), fill=SCANLINE)
 
 
-def draw_7seg(d, x, y, digit, color, h=48, w=28, th=4):
-    ins = 3
+def draw_7seg(d, x, y, digit, color, h=28, w=18, th=3, ins=2):
     segs = {
         "a": (x + ins, y, w - 2 * ins, th),
         "b": (x + w - th, y + ins, th, h // 2 - ins),
@@ -150,21 +150,22 @@ def draw_7seg(d, x, y, digit, color, h=48, w=28, th=4):
         d.rectangle((sx, sy, sx + sw - 1, sy + sh - 1), fill=color)
 
 
-def draw_clock(d, hhmm, x_center, y, frame, h=48, w=28, gap=0):
+def draw_clock(d, hhmm, x_center, y, frame, h=28, w=18, th=3):
+    """Relógio 7-seg compacto — mesma geometria do firmware (SEG_P/SEG_C)."""
     colon_on = frame % 2 == 0
     digits = [int(c) for c in hhmm if c.isdigit()]
     if len(digits) != 4:
         return
-    total = 4 * w + 10  # colon ocupa ~10px
-    x0 = x_center - total // 2
-    xs = [x0, x0 + w, x0 + 2 * w + 10, x0 + 3 * w + 10]
+    pitch, cgap = w + 4, 6
+    x0 = x_center - (3 * pitch + cgap + w) // 2
     for i, dig in enumerate(digits):
-        draw_7seg(d, xs[i] + 1, y + 1, dig, PHOSPHOR_DIM)  # sombra
-        draw_7seg(d, xs[i], y, dig, PHOSPHOR)
+        x = x0 + i * pitch + (cgap if i >= 2 else 0)
+        draw_7seg(d, x + 1, y + 1, dig, PHOSPHOR_DIM, h, w, th)  # sombra
+        draw_7seg(d, x, y, dig, PHOSPHOR, h, w, th)
     if colon_on:
-        cx = x0 + 2 * w + 4
-        d.ellipse((cx, y + h // 2 - 10, cx + 6, y + h // 2 - 4), fill=PHOSPHOR)
-        d.ellipse((cx, y + h // 2 + 4, cx + 6, y + h // 2 + 10), fill=PHOSPHOR)
+        cx = x0 + pitch + w + (pitch - w + cgap) // 2
+        for cy in (y + 9, y + 19):
+            d.ellipse((cx - 2, cy - 2, cx + 2, cy + 2), fill=PHOSPHOR)
 
 
 def draw_weather_icon(d, code, x, y):
@@ -230,15 +231,15 @@ def draw_card(d, img, prov, y, frame, fword, fdate, fbig, fsmall):
     led_on = (frame % period) < (on_ms // 250)
     border = RED if st == "sem_saldo" else CARD_BORDER
 
-    d.rounded_rectangle((8, y, 232, y + 38), radius=6, fill=CARD, outline=border)
-    d.rectangle((8, y + 9, 11, y + 33), fill=color)
+    d.rounded_rectangle((8, y, 231, y + CARD_H - 1), radius=6, fill=CARD, outline=border)
+    d.rectangle((8, y + 8, 10, y + 27), fill=color)
 
     # logo sobre badge com a cor da marca
     lpath = os.path.join(ROOT, "assets", "logos", prov["id"] + ".png")
     if os.path.exists(lpath):
         badge = BADGE_COLORS.get(prov["id"], (32, 32, 32))
-        d.rounded_rectangle((12, y + 1, 48, y + 37), radius=8, fill=badge)
-        logo = process_logo(lpath, pid=prov["id"])
+        d.rounded_rectangle((12, y + 1, 12 + LOGO_SIZE - 1, y + LOGO_SIZE), radius=8, fill=badge)
+        logo = process_logo(lpath, size=LOGO_SIZE, pid=prov["id"])
         img.paste(logo, (12, y + 1))
     else:
         letters = {"claude": "CL", "deepseek": "DS", "ollama_cloud": "OC"}.get(prov["id"], "AI")[:2]
@@ -272,7 +273,7 @@ def draw_card(d, img, prov, y, frame, fword, fdate, fbig, fsmall):
             rows = [(r1, c1), (r2, GRAY)]
 
     for k, (txt, c) in enumerate(rows):
-        d.text((52, y + 3 + k * 18), txt, font=fword, fill=c, anchor="la")
+        d.text((52, y + 2 + k * 17), txt, font=fword, fill=c, anchor="la")
 
 
     # LED de status (anel + dot)
@@ -290,6 +291,8 @@ def render(data, ip, hhmm, ss, frame, out, demo=False):
             {"id": "ollama_cloud", "percent": 100.0, "label": "manual · 100/100", "reset": "reseta: 10/08 00:00", "state": "sem_saldo",
              "limits": [{"label": "H", "percent": 45.0, "reset": "em 3h"}, {"label": "W", "percent": 100.0, "reset": "2d"}]},
             {"id": "qwen", "percent": 0.0, "label": "sem chave de API", "reset": "", "state": "sem_chave", "limits": []},
+            {"id": "claude", "percent": 41.0, "label": "plano max", "reset": "", "state": "saldo",
+             "limits": [{"label": "5h", "percent": 8.0, "reset": "05:40"}, {"label": "1w", "percent": 41.0, "reset": "15/09"}]},
         ]
     else:
         providers = data["providers"]
@@ -305,36 +308,37 @@ def render(data, ip, hhmm, ss, frame, out, demo=False):
     # topo: data (curta) + IP + divisor + sublinhado fosforo
     d.text((6, 3), "07/08", font=fdate, fill=WHITE, anchor="la")
     d.text((234, 3), ip, font=fdate, fill=GRAY, anchor="ra")
-    d.line((0, 23, 239, 23), fill=DIVIDER)
-    d.line((6, 23, 50, 23), fill=PHOSPHOR)
+    d.line((0, 21, 239, 21), fill=DIVIDER)
+    d.line((6, 21, 50, 21), fill=PHOSPHOR)
 
     # clima
     w = data.get("weather") or {}
     if w.get("ok"):
-        d.text((6, 27), ">", font=fdate, fill=PHOSPHOR, anchor="la")
-        d.text((16, 27), f"{w['temp']:.0f}C {w['condition']}", font=fdate, fill=WHITE, anchor="la")
-        draw_weather_icon(d, w.get("icon", ""), 214, 24)
+        d.text((6, 24), ">", font=fdate, fill=PHOSPHOR, anchor="la")
+        d.text((16, 24), f"{w['temp']:.0f}C {w['condition']}", font=fdate, fill=WHITE, anchor="la")
+        draw_weather_icon(d, w.get("icon", ""), 214, 22)
 
     # relogio 7-seg fosforo com sombra + dois-pontos piscando + segundos
-    draw_clock(d, hhmm, 120, 46, frame)
-    d.text((210, 66), ss, font=fdate, fill=CYAN, anchor="la")
+    draw_clock(d, hhmm, 120, 44, frame)
+    d.text((210, 50), ss, font=fdate, fill=CYAN, anchor="la")
 
     # status: LED + texto (última atualização + intervalo)
     led = GREEN if frame % 4 < 3 else GREEN_DIM
-    d.ellipse((8, 106, 14, 112), fill=led)
-    d.text((20, 102), f"{hhmm}:{ss} (60s)", font=fdate, fill=led, anchor="la")
-    d.line((0, 122, 239, 122), fill=DIVIDER)
+    d.ellipse((8, 80, 14, 86), fill=led)
+    d.text((20, 76), f"{hhmm}:{ss} (60s)", font=fdate, fill=led, anchor="la")
+    d.line((0, 92, 239, 92), fill=DIVIDER)
 
-    # cards (1..3, centralizados)
-    n = min(len(providers), 3)
-    gap = 1 if n >= 3 else 4
-    total = n * 38 + (n - 1) * gap
-    start = 124 + (116 - total) // 2
-    for i, prov in enumerate(providers[:3]):
-        draw_card(d, img, prov, start + i * (38 + gap), frame, fword, fdate, fbig, fsmall)
+    # cards (1..MAX_CARDS, centralizados na região 93..239)
+    shown = providers[:MAX_CARDS]
+    n = len(shown)
+    gap = 1 if n >= MAX_CARDS else 4
+    total = n * CARD_H + (n - 1) * gap
+    start = CARDS_Y + (240 - CARDS_Y - total) // 2
+    for i, prov in enumerate(shown):
+        draw_card(d, img, prov, start + i * (CARD_H + gap), frame, fword, fdate, fbig, fsmall)
 
     img.save(out)
-    print(f"ok: {out} ({len(providers[:3])} cards, frame {frame})")
+    print(f"ok: {out} ({n} cards, frame {frame})")
 
 
 def main():
@@ -343,7 +347,7 @@ def main():
     ap.add_argument("--ip", default="192.168.18.67")
     ap.add_argument("--time", default="12:34:56")
     ap.add_argument("--out", default="preview.png")
-    ap.add_argument("--demo", action="store_true", help="usa 3 estados de exemplo")
+    ap.add_argument("--demo", action="store_true", help="usa 4 estados de exemplo")
     ap.add_argument("--gif", action="store_true", help="gera GIF animado")
     ap.add_argument("--frames", type=int, default=6)
     ap.add_argument("--frame", type=int, default=0, help="frame fixo para PNG estatico")
