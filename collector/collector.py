@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """SmartClock AI Collector — busca uso/quota de provedores de IA e expõe JSON
-para o relógio (firmware custom) via GET /usage.
+para o relógio (firmware custom) via GET /usage. Inversor solar PHB (Modbus TCP
+local) em GET /solar — tela 2 do carrossel do relógio.
 
 Página web (GET /): ativar/desativar provedores, definir chaves/budget/reset.
 Provedores sem adapter dedicado usam o modo manual (used/budget/reset livres),
@@ -15,6 +16,8 @@ import json
 import unicodedata
 import os
 import shutil
+import socket
+import struct
 import threading
 import time
 import urllib.parse
@@ -395,6 +398,124 @@ def openweathermap(cfg):
     }
 
 
+# --- Inversor solar PHB (linha D-WS) — Modbus TCP local, SOMENTE leitura (função 03) ---
+# Engenharia reversa e mapa de registradores: https://github.com/visued/phb5000d-ws-modbus
+# O módulo do inversor só responde a blocos dentro de tabelas válidas e tem poucos
+# sockets: 1 conexão por leitura, 1 bloco (30100..30199), intervalo >= 10 s.
+SOLAR_SLOT0 = 5 * 60      # curva do dia: 05:00..19:00
+SOLAR_SLOT_MIN = 20       # em fatias de 20 min -> 42 barras
+SOLAR_SLOTS = 42
+
+
+def _recv_exact(sock, n):
+    buf = b""
+    while len(buf) < n:
+        chunk = sock.recv(n - len(buf))
+        if not chunk:
+            raise ConnectionError("conexão fechada pelo inversor")
+        buf += chunk
+    return buf
+
+
+def phb_solar(cfg):
+    host = str(cfg.get("host", "")).strip()
+    if not host:
+        raise ValueError("phb_solar.host vazio")
+    with socket.create_connection((host, int(cfg.get("port", 502))), timeout=3) as sock:
+        sock.sendall(struct.pack(">HHHBBHH", 1, 0, 6, 1, 3, 30100, 100))
+        head = _recv_exact(sock, 7)
+        body = _recv_exact(sock, struct.unpack(">H", head[4:6])[0] - 1)
+    if body[0] & 0x80:
+        raise RuntimeError(f"modbus exceção {body[1]}")
+    r = dict(zip(range(30100, 30200), struct.unpack(">100H", body[2:202])))
+
+    def s32(a):
+        v = (r[a] << 16) | r[a + 1]
+        return v - (1 << 32) if v & 0x80000000 else v
+
+    pv = []
+    for a in (30103, 30105):
+        v, i = r[a] / 10, r[a + 1] / 10
+        pv.append([round(v, 1), round(i, 1), round(v * i)])
+    return {
+        "w": s32(30127),
+        "today": round(r[30144] / 10, 1),
+        "total": round(((r[30145] << 16) | r[30146]) / 10, 1),
+        "vac": round(r[30118] / 10, 1),
+        "hz": round(r[30124] / 100, 2),
+        "temp": round(max(r[30141], r[30142]) / 10, 1),
+        "pv": pv,
+    }
+
+
+class Solar:
+    """Amostra o inversor em background e guarda a curva de potência do dia (em memória)."""
+
+    def __init__(self, cfg, tz):
+        self.cfg = cfg
+        self.tz = ZoneInfo(tz)
+        self.lock = threading.Lock()
+        self.last = None          # última leitura ok
+        self.last_ts = 0.0
+        self.err = "aguardando primeira leitura"
+        self.day = None
+        self.sums = [0.0] * SOLAR_SLOTS
+        self.counts = [0] * SOLAR_SLOTS
+        self.peak = (0, "")
+
+    def sample(self):
+        now = datetime.now(self.tz)
+        try:
+            res = phb_solar(self.cfg)
+        except Exception as exc:  # noqa: BLE001 — à noite o inversor (e o módulo) desligam
+            with self.lock:
+                self.err = str(exc)
+            return
+        with self.lock:
+            if self.day != now.date():
+                self.day = now.date()
+                self.sums = [0.0] * SOLAR_SLOTS
+                self.counts = [0] * SOLAR_SLOTS
+                self.peak = (0, "")
+            slot = (now.hour * 60 + now.minute - SOLAR_SLOT0) // SOLAR_SLOT_MIN
+            if 0 <= slot < SOLAR_SLOTS:
+                self.sums[slot] += res["w"]
+                self.counts[slot] += 1
+            if res["w"] > self.peak[0]:
+                self.peak = (res["w"], now.strftime("%H:%M"))
+            self.last, self.last_ts, self.err = res, time.time(), None
+
+    def loop(self):
+        while True:
+            self.sample()
+            time.sleep(max(10, int(self.cfg.get("interval", 30))))
+
+    def snapshot(self):
+        rated = int(self.cfg.get("rated_w", 5000)) or 5000
+        with self.lock:
+            last, ts, err = self.last, self.last_ts, self.err
+            hist = [round(s / c * 100 / rated) if c else -1 for s, c in zip(self.sums, self.counts)]
+            peak_w, peak_t = self.peak
+        age = int(time.time() - ts) if last else -1
+        out = {
+            "ok": last is not None,
+            "online": last is not None and age <= 3 * max(10, int(self.cfg.get("interval", 30))),
+            "age": age,
+            "rated": rated,
+            "peak_w": peak_w,
+            "peak_t": peak_t,
+            "slot0": SOLAR_SLOT0,
+            "slot_min": SOLAR_SLOT_MIN,
+            "hist": hist,
+        }
+        if last:
+            out.update(last)
+            out["pct"] = max(0, min(100, round(last["w"] * 100 / rated)))
+        if err:
+            out["err"] = _ascii(err)[:40]
+        return out
+
+
 class Collector:
     def __init__(self, cfg, config_path=None):
         self.cfg = cfg
@@ -403,6 +524,8 @@ class Collector:
         # id -> (timestamp, resultado dict | None, erro str | None)
         self.cache = {}
         self.wcache = (0.0, None, "aguardando primeira consulta")
+        scfg = cfg.get("phb_solar") or {}
+        self.solar = Solar(scfg, cfg.get("timezone", "America/Sao_Paulo")) if scfg.get("enabled") else None
         for pid, pcfg in cfg["providers"].items():
             if pcfg.get("enabled", True):
                 self.cache[pid] = (0.0, None, "aguardando primeira consulta")
@@ -665,6 +788,9 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path == "/usage":
             self._json(self.server.collector.snapshot())
+        elif path == "/solar":
+            solar = self.server.collector.solar
+            self._json(solar.snapshot() if solar else {"ok": False, "online": False, "err": "desativado"})
         elif path == "/healthz":
             self._json({"ok": True})
         elif path in ("/", ""):
@@ -741,7 +867,13 @@ def main():
             if pcfg.get("enabled", True):
                 collector.refresh(pid, pcfg)
         print(json.dumps(collector.snapshot(), indent=2, ensure_ascii=False))
+        if collector.solar:
+            collector.solar.sample()
+            print(json.dumps(collector.solar.snapshot(), indent=2, ensure_ascii=False))
         return
+
+    if collector.solar:
+        threading.Thread(target=collector.solar.loop, daemon=True).start()
 
     httpd = ThreadingHTTPServer((cfg["listen"], int(cfg["port"])), Handler)
     httpd.collector = collector

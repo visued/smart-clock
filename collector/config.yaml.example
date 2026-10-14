@@ -67,3 +67,14 @@ openweathermap:
   enabled: true
   api_key: "SUA_CHAVE_OPENWEATHERMAP"
   city: "Sao Joaquim da Barra,BR"
+
+# Inversor solar PHB (linha D-WS) — leitura LOCAL via Modbus TCP (somente leitura, função 03).
+# Alimenta a tela 2 do carrossel do relógio (GET /solar): potência, energia hoje/total,
+# curva do dia (05h-19h, em memória — zera se o coletor reiniciar), PV e rede.
+# Engenharia reversa e mapa de registradores: https://github.com/visued/phb5000d-ws-modbus
+phb_solar:
+  enabled: false
+  host: 192.168.18.138
+  port: 502
+  rated_w: 5000       # potência nominal (barra de % e escala da curva)
+  interval: 30        # segundos entre leituras (mín. 10 — o módulo do inversor tem poucos sockets)

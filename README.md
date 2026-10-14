@@ -43,6 +43,24 @@ Quer montar o seu? Compre o relógio **JUZIPi SD PRO** ("Smart Weather Clock") a
 - **Limites múltiplos por provedor** (ex.: `H 45% em 3h` / `W 60% 2d`) — como o painel da Ollama
 - **Easter egg de saldo**: LED por card que pulsa (verde = saldo), pisca (vermelho = esgotado) ou âmbar (sem chave)
 
+### 🔁 Carrossel — tela 2: Solar (fósforo âmbar)
+
+O relógio alterna entre a tela de IA e a tela do **inversor solar PHB5000D-WS** a cada N segundos
+(`carousel` na web UI do relógio; padrão 15 s, `0` = só a tela de IA). A transição é uma
+"varredura de CRT".
+
+![Tela solar](design/solar.gif)
+
+- **Potência agora** em 7-seg âmbar + barra de 25 segmentos (% da nominal, ponta pulsando)
+- **Hoje** (kWh) e **Total** (MWh)
+- **Curva do dia** 05h–19h em barras de 20 min, com pico e a barra atual piscando
+- **PV1/PV2** (V, A, kW), tensão/frequência da rede e temperatura do inversor
+- Estado: `GERANDO` (LED verde), `OCIOSO`, `NOITE` (lua) ou `OFFLINE` (com "há quanto tempo")
+
+Os dados vêm do **coletor**, que lê o inversor localmente via **Modbus TCP** (somente leitura) e
+expõe `GET /solar`. Se o coletor não tiver leitura do inversor, o carrossel fica só na tela de IA.
+Engenharia reversa e mapa de registradores: [visued/phb5000d-ws-modbus](https://github.com/visued/phb5000d-ws-modbus).
+
 ## 📦 Estrutura
 
 ```
@@ -84,6 +102,8 @@ com prefixo `SDP`. O WiFi salvo é reutilizado. Config do relógio: URL do colet
 ```bash
 .venv/bin/python scripts/preview.py --ip 192.168.18.67 --time 12:34:56        # PNG com dados reais
 .venv/bin/python scripts/preview.py --demo --gif --out design/animation.gif   # GIF do easter egg
+.venv/bin/python scripts/preview.py --page solar --solar-url http://127.0.0.1:8787/solar --out design/solar.png
+.venv/bin/python scripts/preview.py --page solar --demo --gif --frames 8 --out design/solar.gif
 ```
 
 ### 4. Restaurar firmware original
@@ -99,6 +119,7 @@ com prefixo `SDP`. O WiFi salvo é reutilizado. Config do relógio: URL do colet
 | **Z.ai GLM** | Quota real via endpoint de monitoramento (não-oficial — pode mudar) + fallback manual | reset por limite |
 | **Claude (Pro/Max)** | Quota real via `GET api.anthropic.com/api/oauth/usage` (não documentado — o mesmo do `/usage` do Claude Code) com o token OAuth do login do Claude Code (`~/.claude/.credentials.json`, montado read-only no Docker) + fallback manual | reset por limite (sessão 5h / semanal) |
 | **Qwen, Kimi, ChatGPT...** | Manual (`used`/`budget` + limites) | texto livre por limite |
+| **Inversor solar PHB** (tela 2) | Modbus TCP local, função 03, a cada 30 s (`phb_solar` no `config.yaml`) → `GET /solar`; curva do dia em memória (zera se o coletor reiniciar) | — |
 
 Cada provedor aceita **limites extras** (sessão/semanal/mensal): rótulo, usado, budget e reset.
 
